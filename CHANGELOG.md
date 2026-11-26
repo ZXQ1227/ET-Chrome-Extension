@@ -20,4 +20,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pronunciation depends on voices installed by the OS/browser; a matching `en-GB`/`en-US` voice may not exist on every device.
 - No automated tests yet.
 
-[0.1.0]: https://github.com/ZXQ1227/ET-English-Translator/releases/tag/v0.1.0
+[0.1.0]: https://github.com/ZXQ1227/ET-Chrome-Extension/releases/tag/v0.1.0
