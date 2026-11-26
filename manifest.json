@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "ET - English Translator",
+  "version": "0.1.0",
+  "description": "Select English text to translate, understand, and listen in British or American pronunciation.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://translate.googleapis.com/*",
+    "https://api.dictionaryapi.dev/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/et16.png",
+    "48": "icons/et48.png",
+    "128": "icons/et128.png"
+  }
+}
