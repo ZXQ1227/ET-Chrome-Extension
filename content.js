@@ -113,11 +113,25 @@
     lastSelection = txt;
     const range = sel.getRangeAt(0);
     selectionRect = range.getBoundingClientRect();
-    const x = Math.min(selectionRect.right + 8, innerWidth - 46);
-    const y = Math.max(8, selectionRect.top - 44);
-    place(icon, x, y);
+    placeSelectionIcon();
     icon.style.display = 'grid';
     card.style.display = 'none';
+  }
+  // Position the ET icon next to the end of the current selection:
+  // 1. Preferred: to the right of the selection, one line above it.
+  // 2. No room on the right: tuck it just above (or below) the end of the
+  //    selection, aligned with its right edge, instead of overlapping text.
+  // 3. place() still clamps everything inside the viewport as a last resort.
+  function placeSelectionIcon() {
+    const pad = 10, gap = 8, size = 36;
+    const yAbove = selectionRect.top - size - gap;
+    const y = yAbove >= pad ? yAbove : selectionRect.bottom + gap;
+    const fitsRight = selectionRect.right + gap + size <= innerWidth - pad;
+    if (fitsRight) {
+      place(icon, selectionRect.right + gap, y);
+      return;
+    }
+    place(icon, Math.max(pad, selectionRect.right - size), y);
   }
   document.addEventListener('mouseup', e => {
     if (e.composedPath().includes(host)) return;
