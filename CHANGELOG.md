@@ -5,6 +5,18 @@ All notable changes to ET will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-11-27
+
+### Added
+- Translation results are cached in `chrome.storage.local` (last 400 entries, 30-day expiry), so re-selecting the same passage no longer hits the network.
+- Failures now explain what happened — rate limited, timed out, unexpected response, or empty result — and offer a **Retry** button instead of making you re-select the text.
+- Long selections disclose that only the first 1800 characters are translated.
+
+### Changed
+- Translation requests are bounded by an 8-second timeout, so a stalled request can no longer leave the card on "Translating…" indefinitely.
+- A newer request always wins: switching the target language cancels the in-flight request, and a late response can no longer overwrite the language you just picked.
+- Dropped the unused `dt=bd` parameter from the translation request, which asked Google for dictionary data the extension never read.
+
 ## [0.1.2] - 2026-11-27
 
 ### Changed

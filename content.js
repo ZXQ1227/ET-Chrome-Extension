@@ -44,6 +44,10 @@
     .et-status{font-size:11px;color:#8490a3;margin-left:auto}
     .et-error{font-size:13px;color:#b42318}
     .et-loading{color:#7b8496;font-size:14px}
+    .et-note{font-size:11px;color:#8490a3;margin:-4px 0 9px}
+    .et-retry{margin-left:8px;border:1px solid #c7d2fe;background:#f1f3ff;color:#5145e8;border-radius:8px;
+      padding:3px 11px;font-size:12px;font-weight:650;cursor:pointer;font-family:inherit;vertical-align:middle}
+    .et-retry:hover{background:#e6e9ff;border-color:#a5b4fc}
     .et-card button:focus-visible,.et-card select:focus-visible,.et-icon:focus-visible{outline:2px solid #7667f7;outline-offset:2px}
     @media(max-width:480px){.et-card{width:calc(100vw - 20px)}.et-top{gap:7px;padding:0 10px}.et-select{min-width:95px}.et-body{padding:17px 15px}}
   `;
@@ -74,6 +78,7 @@
     </div>
     <div class="et-body">
       <div class="et-source"></div>
+      <div class="et-note"></div>
       <div class="et-result"><span class="et-loading">Translating…</span></div>
       <div class="et-phonetic"></div>
       <div class="et-divider"></div>
@@ -92,6 +97,75 @@
   let pinned = false;
   let targetLang = 'zh-CN';
   let lastSelection = '';
+
+  // Translation requests are best-effort against a public endpoint: bound them
+  // in time, keep them out of the query-string length limit, and remember what
+  // we already fetched. Without the timeout a stalled request leaves the card
+  // on "Translating…" forever.
+  const CACHE_PREFIX = 'et.tc.';
+  const CACHE_INDEX = 'et.tc.index';
+  const CACHE_LIMIT = 400;
+  const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
+  const REQUEST_TIMEOUT = 8000;
+  const MAX_QUERY_CHARS = 1800;
+
+  let translateSeq = 0;
+  let activeRequest = null;
+
+  function hash(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(36);
+  }
+
+  // chrome.storage disappears if the extension is reloaded mid-page; a cache
+  // miss is always safe, so swallow those failures instead of breaking the UI.
+  async function cacheGet(key) {
+    try {
+      const k = CACHE_PREFIX + key;
+      const got = await chrome.storage.local.get(k);
+      const row = got && got[k];
+      if (!row || typeof row.text !== 'string') return null;
+      if (Date.now() - row.at > CACHE_TTL) { chrome.storage.local.remove(k); return null; }
+      return row.text;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function cacheSet(key, text) {
+    try {
+      const k = CACHE_PREFIX + key;
+      const got = await chrome.storage.local.get(CACHE_INDEX);
+      let index = Array.isArray(got && got[CACHE_INDEX]) ? got[CACHE_INDEX] : [];
+      index = index.filter(row => row && row[0] !== k);
+      index.push([k, Date.now()]);
+      const evicted = index.length > CACHE_LIMIT ? index.splice(0, index.length - CACHE_LIMIT) : [];
+      await chrome.storage.local.set({ [k]: { text, at: Date.now() }, [CACHE_INDEX]: index });
+      if (evicted.length) await chrome.storage.local.remove(evicted.map(row => row[0]));
+    } catch (_) {}
+  }
+
+  function requestError(code, detail) {
+    const error = new Error(detail);
+    error.code = code;
+    return error;
+  }
+
+  // Map a failure to something the reader can act on. The old catch-all
+  // "Translation failed" told the user nothing about whether retrying helps.
+  function messageFor(error) {
+    switch (error && error.code) {
+      case 'rate': return 'The translation service is rate limiting requests. Try again in a minute.';
+      case 'timeout': return 'Translation timed out. Try again, or select a shorter passage.';
+      case 'shape': return 'The translation service returned an unexpected response.';
+      case 'empty': return 'The translation service returned an empty result.';
+      default: return 'Translation failed. Check your connection and try again.';
+    }
+  }
 
   function hideAll() {
     if (pinned) return;
@@ -168,15 +242,57 @@
   });
 
   async function translate(text, lang) {
+    const result = $('.et-result');
+    const note = $('.et-note');
+    const query = text.slice(0, MAX_QUERY_CHARS);
+    note.textContent = text.length > MAX_QUERY_CHARS
+      ? `Showing the first ${MAX_QUERY_CHARS} characters.`
+      : '';
+
+    const key = `${lang}:${hash(query)}`;
+    const cached = await cacheGet(key);
+    if (cached) {
+      if (lang !== targetLang) return;
+      result.textContent = cached;
+      $('.et-status').textContent = 'Cached result';
+      return;
+    }
+
+    // Any newer request wins: drop the in-flight one so a late response can
+    // never overwrite the language the user just switched to.
+    const seq = ++translateSeq;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+    result.innerHTML = '<span class="et-loading">Translating…</span>';
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(lang)}&dt=t&dt=bd&q=${encodeURIComponent(text)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Translation service unavailable');
-      const data = await res.json();
-      const translated = (data[0] || []).map(x => x[0]).filter(Boolean).join('');
-      $('.et-result').textContent = translated || 'No translation returned.';
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(lang)}&dt=t&q=${encodeURIComponent(query)}`;
+      const res = await fetch(url, { signal: controller.signal, credentials: 'omit' });
+      if (!res.ok) throw requestError(res.status === 429 ? 'rate' : 'network', `HTTP ${res.status}`);
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        // Some failure modes answer with a consent/challenge page, not JSON.
+        throw requestError('shape', 'response was not JSON');
+      }
+      if (!Array.isArray(data) || !Array.isArray(data[0])) throw requestError('shape', 'unexpected response shape');
+      const translated = data[0].map(seg => (Array.isArray(seg) ? seg[0] : '')).filter(Boolean).join('');
+      if (!translated) throw requestError('empty', 'no translation returned');
+      if (seq !== translateSeq) return;
+      result.textContent = translated;
+      $('.et-status').textContent = 'Read original text';
+      await cacheSet(key, translated);
     } catch (e) {
-      $('.et-result').innerHTML = '<span class="et-error">Translation failed. Please try again.</span>';
+      if (seq !== translateSeq) return;
+      const code = e && e.name === 'AbortError' ? 'timeout' : (e && e.code) || 'network';
+      result.innerHTML = `<span class="et-error">${escapeHtml(messageFor({ code }))}</span>` +
+        '<button class="et-retry" type="button">Retry</button>';
+    } finally {
+      clearTimeout(timer);
+      if (activeRequest === controller) activeRequest = null;
     }
   }
 
@@ -239,6 +355,17 @@
     synth.speak(utterance);
     $('.et-status').textContent = locale === 'en-GB' ? 'Playing British pronunciation' : 'Playing American pronunciation';
   }));
+
+  // Retry after a failure: re-run the current selection in the current language
+  // without making the reader re-select the text.
+  card.addEventListener('click', e => {
+    const button = e.target && e.target.closest ? e.target.closest('.et-retry') : null;
+    if (!button) return;
+    const text = selectedText || lastSelection;
+    if (!text) return;
+    button.disabled = true;
+    translate(text, targetLang);
+  });
 
   document.addEventListener('click', e => {
     if (e.composedPath().includes(host)) return;

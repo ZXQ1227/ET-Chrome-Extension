@@ -12,6 +12,7 @@ ET is a minimal Chrome extension (Manifest V3): select English text on any webpa
 - **Dictionary mode** — for a single English word, show IPA and definitions when the dictionary service has an entry.
 - **British / American pronunciation** — read the original text using an available `en-GB` or `en-US` system/browser speech voice.
 - **Local word list** — save selected words locally in Chrome storage. Nothing is sent to any custom server.
+- **Repeat lookups are free** — the last 400 translations are cached for 30 days, so re-selecting the same text doesn't hit the network again. If a request fails, the card says why (rate limited, timed out, unexpected response) and offers a retry.
 
 ## Install (from source)
 
@@ -55,7 +56,7 @@ Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup and g
 Single content script (`content.js`) injected at `document_idle`:
 
 - Renders all UI inside a Shadow DOM host (`#et-extension-host`) so page styles can't leak in.
-- `translate()` — Google public translate endpoint.
+- `translate()` — Google public translate endpoint, with an 8-second timeout, a local result cache, and per-failure messages (rate limited / timed out / unexpected response) plus a retry button.
 - `lookupWord()` — Free Dictionary API.
 - Pronunciation — Web Speech Synthesis API.
 - Storage — `chrome.storage.local`.
