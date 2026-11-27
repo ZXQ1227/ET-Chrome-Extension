@@ -5,6 +5,13 @@ All notable changes to ET will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-11-27
+
+### Changed
+- Selection icon now sits on the same line as the selection, immediately to its right (previously it floated one line above and to the right).
+- Multi-line selections anchor the icon to the end of the last visual line via `Range.getClientRects()`, instead of the top-right of the whole block.
+- When the right edge has no room, the icon drops just below the end of the selection, right-aligned, instead of tucking above it.
+
 ## [0.1.1] - 2026-11-27
 
 ### Changed

@@ -113,25 +113,28 @@
     lastSelection = txt;
     const range = sel.getRangeAt(0);
     selectionRect = range.getBoundingClientRect();
-    placeSelectionIcon();
+    // getClientRects() gives one rect per visual line; the last one is where
+    // the selection actually ends. Use it so multi-line selections anchor the
+    // icon to the end of the last line, not the top-right of the whole block.
+    const rects = range.getClientRects();
+    const endRect = rects.length ? rects[rects.length - 1] : selectionRect;
+    placeSelectionIcon(endRect);
     icon.style.display = 'grid';
     card.style.display = 'none';
   }
-  // Position the ET icon next to the end of the current selection:
-  // 1. Preferred: to the right of the selection, one line above it.
-  // 2. No room on the right: tuck it just above (or below) the end of the
-  //    selection, aligned with its right edge, instead of overlapping text.
+  // Position the ET icon at the right side of where the selection ends:
+  // 1. Preferred: immediately to the right of the end rect, on the same line.
+  // 2. No room on the right: drop just below the end of the selection,
+  //    right-aligned with it (never up and to the right, never over the text).
   // 3. place() still clamps everything inside the viewport as a last resort.
-  function placeSelectionIcon() {
+  function placeSelectionIcon(rect) {
     const pad = 10, gap = 8, size = 36;
-    const yAbove = selectionRect.top - size - gap;
-    const y = yAbove >= pad ? yAbove : selectionRect.bottom + gap;
-    const fitsRight = selectionRect.right + gap + size <= innerWidth - pad;
+    const fitsRight = rect.right + gap + size <= innerWidth - pad;
     if (fitsRight) {
-      place(icon, selectionRect.right + gap, y);
+      place(icon, rect.right + gap, rect.top);
       return;
     }
-    place(icon, Math.max(pad, selectionRect.right - size), y);
+    place(icon, Math.max(pad, rect.right - size), rect.bottom + gap);
   }
   document.addEventListener('mouseup', e => {
     if (e.composedPath().includes(host)) return;
